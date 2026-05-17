@@ -1,0 +1,1028 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Corn's Menu - 私人点单小程序预览</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  min-height: 100vh;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #F7F6F1;
+  color: #1D1D1F;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px;
+}
+
+.phone {
+  width: 390px;
+  height: 820px;
+  border-radius: 44px;
+  background: #111;
+  padding: 12px;
+  box-shadow: 0 28px 80px rgba(38, 56, 47, 0.28);
+}
+
+.screen {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 34px;
+  overflow: hidden;
+  background: #F7F6F1;
+}
+
+.screen.order-active .status {
+  color: #1D1D1F;
+}
+
+.status {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  height: 42px;
+  padding: 14px 24px 0;
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: 800;
+  color: #1D1D1F;
+}
+
+.page {
+  height: 100%;
+  overflow-y: auto;
+  padding-bottom: 94px;
+}
+
+.page.hidden {
+  display: none;
+}
+
+.login-page {
+  padding: 72px 24px 28px;
+  background:
+    radial-gradient(circle at 78% 8%, rgba(255, 214, 10, .16), transparent 32%),
+    radial-gradient(circle at 12% 18%, rgba(199, 216, 107, .12), transparent 28%),
+    linear-gradient(180deg, #FAF9F4 0%, #F7F6F1 48%, #F2F2ED 100%);
+}
+
+.brand-mark {
+  width: 54px;
+  height: 54px;
+  border-radius: 17px;
+  background: rgba(255,159,10,.16);
+  color: #A85F00;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 27px;
+  font-weight: 900;
+  margin-bottom: 18px;
+  box-shadow: 0 12px 26px rgba(60,60,67,.10);
+}
+
+.login-kicker {
+  color: #FF9F0A;
+  font-size: 13px;
+  font-weight: 900;
+  margin-bottom: 9px;
+}
+
+.login-title {
+  font-size: 34px;
+  line-height: 1.1;
+  font-weight: 900;
+  margin-bottom: 12px;
+}
+
+.login-subtitle {
+  color: #6E6E73;
+  font-size: 15px;
+  line-height: 1.55;
+  margin-bottom: 24px;
+}
+
+.login-panel {
+  background: rgba(255,255,255,.82);
+  border: 1px solid rgba(60,60,67,.10);
+  border-radius: 26px;
+  padding: 22px;
+  box-shadow: 0 20px 44px rgba(60,60,67,.10);
+  backdrop-filter: blur(18px);
+}
+
+.login-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 2px 0 20px;
+  color: #8E8E93;
+  font-size: 12px;
+}
+
+.login-meta button {
+  border: 0;
+  background: transparent;
+  color: #FF9F0A;
+  font-weight: 900;
+}
+
+.login-submit {
+  width: 100%;
+  height: 54px;
+  border: 0;
+  border-radius: 18px;
+  background: #FFB340;
+  color: #1D1D1F;
+  font-size: 16px;
+  font-weight: 900;
+  box-shadow: 0 14px 24px rgba(255,159,10,.22);
+}
+
+.login-footer {
+  text-align: center;
+  margin-top: 18px;
+  color: #6E6E73;
+  font-size: 14px;
+}
+
+.header {
+  padding: 72px 24px 52px;
+  background:
+    radial-gradient(circle at 82% 0%, rgba(255,214,10,.18), transparent 34%),
+    linear-gradient(180deg, #FAF9F4 0%, #F7F6F1 100%);
+  color: #1D1D1F;
+  display: flex;
+  gap: 16px;
+}
+
+.brand {
+  display: block;
+  color: #8E8E93;
+  font-size: 13px;
+  font-weight: 900;
+  margin-bottom: 8px;
+}
+
+.title {
+  display: block;
+  font-size: 30px;
+  font-weight: 900;
+  line-height: 1.12;
+}
+
+.subtitle {
+  display: block;
+  margin-top: 10px;
+  color: #6E6E73;
+  font-size: 14px;
+}
+
+.quick-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 0 24px 16px;
+}
+
+.quick-btn {
+  height: 46px;
+  border: 0;
+  border-radius: 15px;
+  background: rgba(255,255,255,.86);
+  color: #1D1D1F;
+  border: 1px solid rgba(60, 60, 67, 0.10);
+  font-weight: 900;
+  box-shadow: 0 8px 20px rgba(60,60,67,.08);
+}
+
+.quick-btn.primary {
+  background: #FFB340;
+  border-color: #FFE6A7;
+}
+
+.quick-btn.secondary {
+  color: #A85F00;
+}
+
+.search {
+  height: 52px;
+  margin: -26px 24px 16px;
+  border-radius: 18px;
+  background: rgba(255,255,255,.86);
+  border: 1px solid rgba(60, 60, 67, 0.10);
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  gap: 10px;
+  box-shadow: 0 12px 30px rgba(60,60,67,.10);
+}
+
+.search span {
+  color: #6E6E73;
+  font-weight: 900;
+}
+
+.search input {
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #1D1D1F;
+  font-size: 14px;
+}
+
+.tabs {
+  display: flex;
+  gap: 9px;
+  overflow-x: auto;
+  padding: 0 24px 16px;
+  scrollbar-width: none;
+}
+
+.tabs::-webkit-scrollbar { display: none; }
+
+.tab {
+  flex: 0 0 auto;
+  height: 38px;
+  border: 1px solid rgba(60, 60, 67, 0.10);
+  border-radius: 14px;
+  background: rgba(255,255,255,.86);
+  color: #6E6E73;
+  padding: 0 16px;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.tab.active {
+  background: #FFF4CB;
+  border-color: #FFE6A7;
+  color: #1D1D1F;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  padding: 0 24px 20px;
+}
+
+.card {
+  background: rgba(255,255,255,.86);
+  border-radius: 22px;
+  border: 1px solid rgba(60, 60, 67, 0.10);
+  overflow: hidden;
+  box-shadow: 0 8px 22px rgba(60,60,67,.08);
+}
+
+.cover {
+  height: 102px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.card.theme-0 .cover { background: linear-gradient(135deg, #FFE6A7, #FFF6D5); }
+.card.theme-1 .cover { background: linear-gradient(135deg, #FFB340, #FFE0A0); }
+.card.theme-2 .cover { background: linear-gradient(135deg, #FFF4CB, #FAF9F4); }
+.card.theme-3 .cover { background: linear-gradient(135deg, #D7E58D, #FFF4CB); }
+.card.theme-4 .cover { background: linear-gradient(135deg, #FAF9F4, #D7E58D); }
+
+.icon {
+  width: 54px;
+  height: 54px;
+  border-radius: 18px;
+  background: rgba(255,255,255,.78);
+  color: #1D1D1F;
+  border: 1px solid rgba(60,60,67,.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  font-weight: 900;
+}
+
+.card-body {
+  padding: 12px;
+}
+
+.card h3 {
+  font-size: 16px;
+  margin-bottom: 6px;
+}
+
+.desc {
+  height: 38px;
+  color: #6E6E73;
+  font-size: 12px;
+  line-height: 1.45;
+  overflow: hidden;
+}
+
+.card-foot {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.manage-row {
+  display: flex;
+  gap: 14px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #f0ead7;
+}
+
+.manage {
+  border: 0;
+  background: transparent;
+  color: #8E8E93;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.manage.delete {
+  color: #d95745;
+}
+
+.price {
+  color: #FF9F0A;
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.add {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 12px;
+  background: #FF9F0A;
+  color: #fff;
+  font-size: 19px;
+  font-weight: 900;
+}
+
+.empty {
+  margin: 0 24px;
+  min-height: 430px;
+  border: 1px dashed #cfd8cc;
+  border-radius: 26px;
+  background: rgba(255,255,255,.76);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 28px;
+  text-align: center;
+}
+
+.empty-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 20px;
+  background: #FF9F0A;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 34px;
+  font-weight: 900;
+}
+
+.empty h3 {
+  font-size: 19px;
+}
+
+.empty p {
+  color: #6E6E73;
+  font-size: 14px;
+}
+
+.empty button {
+  height: 44px;
+  border: 0;
+  border-radius: 15px;
+  background: #FFB340;
+  color: #1D1D1F;
+  padding: 0 22px;
+  font-weight: 900;
+  margin-top: 4px;
+}
+
+.cart-bar {
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  bottom: 18px;
+  min-height: 62px;
+  border-radius: 22px;
+  background: #FF9F0A;
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 10px 9px 14px;
+  box-shadow: 0 16px 34px rgba(32,40,34,.2);
+  color: #fff;
+  z-index: 15;
+}
+
+.cart-left {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.cart-icon {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  border-radius: 14px;
+  background: rgba(255,255,255,.14);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.badge {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  min-width: 20px;
+  height: 20px;
+  border-radius: 11px;
+  background: #D7E58D;
+  color: #1D1D1F;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.cart-price {
+  font-size: 19px;
+  font-weight: 900;
+}
+
+.cart-tip {
+  color: rgba(255,255,255,.56);
+  font-size: 12px;
+}
+
+.checkout {
+  width: 82px;
+  height: 42px;
+  border: 0;
+  border-radius: 15px;
+  background: #FFF4CB;
+  color: #1D1D1F;
+  font-weight: 900;
+}
+
+.mask {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  background: rgba(0,0,0,.32);
+  display: none;
+  align-items: flex-end;
+}
+
+.mask.show { display: flex; }
+
+.modal {
+  width: 100%;
+  background: rgba(255,255,255,.86);
+  border-radius: 28px 28px 0 0;
+  padding: 22px;
+}
+
+.modal-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.modal-title {
+  font-size: 21px;
+  font-weight: 900;
+}
+
+.modal-sub {
+  margin-top: 5px;
+  color: #8E8E93;
+  font-size: 13px;
+}
+
+.close {
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 13px;
+  background: #FFF4CB;
+  color: #6E6E73;
+  font-size: 22px;
+}
+
+.field {
+  margin-bottom: 14px;
+}
+
+.label {
+  display: block;
+  color: #6E6E73;
+  font-size: 13px;
+  font-weight: 900;
+  margin-bottom: 8px;
+}
+
+.field input {
+  width: 100%;
+  height: 48px;
+  border: 1px solid transparent;
+  border-radius: 15px;
+  background: rgba(242, 242, 247, 0.86);
+  padding: 0 14px;
+  outline: 0;
+  font-size: 14px;
+}
+
+.note-input {
+  margin-top: 10px;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 1fr 92px;
+  gap: 12px;
+}
+
+.category-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.category-option {
+  height: 36px;
+  padding: 0 13px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: rgba(242, 242, 247, 0.86);
+  color: #6E6E73;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.category-option.selected {
+  background: #FFF4CB;
+  border-color: #FFE6A7;
+  color: #1D1D1F;
+}
+
+.icon-picker {
+  height: 48px;
+  border: 1px solid transparent;
+  border-radius: 15px;
+  background: rgba(242, 242, 247, 0.86);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  color: #1D1D1F;
+}
+
+.icon-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 2px 0 18px;
+}
+
+.icon-option {
+  width: 36px;
+  height: 36px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: rgba(242, 242, 247, 0.86);
+  color: #1D1D1F;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.icon-option.selected {
+  background: #FFF4CB;
+  border-color: #FFE6A7;
+}
+
+.modal-actions {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 12px;
+}
+
+.secondary,
+.primary {
+  height: 50px;
+  border: 0;
+  border-radius: 16px;
+  font-weight: 900;
+}
+
+.secondary {
+  background: #FFF4CB;
+  color: #6E6E73;
+}
+
+.primary {
+  background: #FF9F0A;
+  color: #fff;
+}
+
+@media (max-width: 520px) {
+  body { padding: 0; }
+  .phone {
+    width: 100vw;
+    height: 100vh;
+    border-radius: 0;
+    padding: 0;
+  }
+  .screen { border-radius: 0; }
+}
+</style>
+</head>
+<body>
+<main class="phone">
+  <section class="screen">
+    <div class="status">
+      <span>21:08</span>
+      <span>5G 100%</span>
+    </div>
+
+    <div class="page login-page" id="loginPage">
+      <div class="brand-mark">C</div>
+      <div class="login-kicker">Corn's Menu · 专属入口</div>
+      <h1 class="login-title">欢迎回来</h1>
+      <p class="login-subtitle">登录后进入私人点单台，先添加商品，再开始点单。</p>
+
+      <div class="login-panel">
+        <div class="field">
+          <label class="label">账号</label>
+          <input id="loginAccount" maxlength="20" placeholder="请输入账号">
+        </div>
+
+        <div class="field">
+          <label class="label">密码</label>
+          <input id="loginPassword" maxlength="24" placeholder="请输入密码" type="password">
+        </div>
+
+        <button class="login-submit" type="button" id="loginBtn">进入点单台</button>
+        <div class="login-footer">私人菜单，自己添加想要的商品。</div>
+      </div>
+    </div>
+
+    <div class="page hidden" id="orderPage">
+      <header class="header">
+        <div>
+          <span class="brand">Corn's Menu</span>
+          <span class="title">私人点单台</span>
+          <span class="subtitle">先添加商品，再开始点单。</span>
+        </div>
+      </header>
+
+      <div class="search">
+        <span>⌕</span>
+        <input id="searchInput" placeholder="搜索商品名称">
+      </div>
+
+      <div class="quick-actions">
+        <button class="quick-btn primary" id="openAddTop">+ 添加商品</button>
+        <button class="quick-btn secondary" id="openOrders">查看订单</button>
+      </div>
+
+      <nav class="tabs" id="tabs"></nav>
+      <section id="content"></section>
+    </div>
+
+    <div class="cart-bar" id="cartBar">
+      <div class="cart-left">
+        <div class="cart-icon">单<span class="badge" id="cartCount">0</span></div>
+        <div>
+          <div class="cart-price" id="cartPrice">¥0</div>
+          <div class="cart-tip">已选商品</div>
+        </div>
+      </div>
+      <button class="checkout" id="checkoutBtn">结算</button>
+    </div>
+
+    <div class="mask" id="addMask">
+      <div class="modal">
+        <div class="modal-head">
+          <div>
+            <div class="modal-title">添加商品</div>
+            <div class="modal-sub" id="modalCategory">把它放到合适的分类里。</div>
+          </div>
+          <button class="close" id="closeAdd">×</button>
+        </div>
+
+        <div class="field">
+          <label class="label">分类</label>
+          <div class="category-picker" id="categoryPicker"></div>
+        </div>
+
+        <div class="field">
+          <label class="label">商品名称</label>
+          <input id="goodsName" maxlength="16" placeholder="例：冰美式">
+        </div>
+
+        <div class="row">
+          <div class="field">
+            <label class="label">价格</label>
+            <input id="goodsPrice" type="number" maxlength="5" placeholder="18">
+          </div>
+          <div class="field">
+            <label class="label">图标</label>
+            <div class="icon-picker" id="iconPicker">咖</div>
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="label">描述</label>
+          <input id="goodsDesc" maxlength="28" placeholder="例：少冰、三分糖">
+        </div>
+
+        <div class="icon-list" id="iconList"></div>
+
+        <div class="modal-actions">
+          <button class="secondary" id="cancelAdd">取消</button>
+          <button class="primary" id="confirmAdd">确认添加</button>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+const categories = ['咖啡', '果茶', '奶茶', '便利店', '其他'];
+const icons = ['咖', '果', '奶', '便', '其', '茶', '甜'];
+let activeCategory = 0;
+let formCategory = 0;
+let selectedIcon = '咖';
+let editingId = '';
+let goods = [];
+let cartCount = 0;
+let cartTotal = 0;
+
+const tabs = document.getElementById('tabs');
+const content = document.getElementById('content');
+const searchInput = document.getElementById('searchInput');
+const addMask = document.getElementById('addMask');
+const modalCategory = document.getElementById('modalCategory');
+const categoryPicker = document.getElementById('categoryPicker');
+const iconPicker = document.getElementById('iconPicker');
+const iconList = document.getElementById('iconList');
+const cartBar = document.getElementById('cartBar');
+const cartCountEl = document.getElementById('cartCount');
+const cartPriceEl = document.getElementById('cartPrice');
+const screen = document.querySelector('.screen');
+const loginPage = document.getElementById('loginPage');
+const orderPage = document.getElementById('orderPage');
+
+function showOrderPage() {
+  const account = document.getElementById('loginAccount').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  if (!account || !password) {
+    alert('请输入账号和密码');
+    return;
+  }
+  loginPage.classList.add('hidden');
+  orderPage.classList.remove('hidden');
+  screen.classList.add('order-active');
+}
+
+function showLoginPage() {
+  orderPage.classList.add('hidden');
+  loginPage.classList.remove('hidden');
+  screen.classList.remove('order-active');
+  cartBar.style.display = 'none';
+}
+
+function renderTabs() {
+  tabs.innerHTML = categories.map((name, index) => (
+    `<button class="tab ${index === activeCategory ? 'active' : ''}" data-index="${index}">${name}</button>`
+  )).join('');
+
+  tabs.querySelectorAll('.tab').forEach(button => {
+    button.addEventListener('click', () => {
+      activeCategory = Number(button.dataset.index);
+      renderTabs();
+      renderContent();
+    });
+  });
+}
+
+function renderContent() {
+  const keyword = searchInput.value.trim();
+  const list = goods.filter(item => (
+    item.category === activeCategory &&
+    (!keyword || item.name.includes(keyword) || item.desc.includes(keyword))
+  ));
+
+  if (!list.length) {
+    content.innerHTML = `
+      <div class="empty">
+        <div class="empty-icon">+</div>
+        <h3>这个分类还没有商品</h3>
+        <p>点击按钮添加第一件商品。</p>
+        <button id="emptyAdd">添加商品</button>
+      </div>
+    `;
+    document.getElementById('emptyAdd').addEventListener('click', openAdd);
+    return;
+  }
+
+  content.innerHTML = `
+    <div class="grid">
+      ${list.map(item => `
+        <article class="card theme-${item.category}">
+          <div class="cover"><div class="icon">${item.icon}</div></div>
+          <div class="card-body">
+            <h3>${item.name}</h3>
+            <p class="desc">${item.desc}</p>
+            <div class="card-foot">
+              <span class="price">¥${item.price}</span>
+              <button class="add" data-id="${item.id}">+</button>
+            </div>
+            <div class="manage-row">
+              <button class="manage edit" data-id="${item.id}">编辑</button>
+              <button class="manage delete" data-id="${item.id}">删除</button>
+            </div>
+          </div>
+        </article>
+      `).join('')}
+    </div>
+  `;
+
+  content.querySelectorAll('.add').forEach(button => {
+    button.addEventListener('click', () => {
+      const item = goods.find(goodsItem => goodsItem.id === button.dataset.id);
+      cartCount += 1;
+      cartTotal += item.price;
+      cartCountEl.textContent = cartCount;
+      cartPriceEl.textContent = `¥${cartTotal}`;
+      cartBar.style.display = 'flex';
+    });
+  });
+
+  content.querySelectorAll('.edit').forEach(button => {
+    button.addEventListener('click', () => {
+      const item = goods.find(goodsItem => goodsItem.id === button.dataset.id);
+      openEdit(item);
+    });
+  });
+
+  content.querySelectorAll('.delete').forEach(button => {
+    button.addEventListener('click', () => {
+      const item = goods.find(goodsItem => goodsItem.id === button.dataset.id);
+      if (!confirm(`确定删除「${item.name}」吗？`)) return;
+      goods = goods.filter(goodsItem => goodsItem.id !== item.id);
+      renderContent();
+    });
+  });
+}
+
+function renderIcons() {
+  iconList.innerHTML = icons.map(icon => (
+    `<button class="icon-option ${icon === selectedIcon ? 'selected' : ''}" data-icon="${icon}">${icon}</button>`
+  )).join('');
+
+  iconList.querySelectorAll('.icon-option').forEach(button => {
+    button.addEventListener('click', () => {
+      selectedIcon = button.dataset.icon;
+      iconPicker.textContent = selectedIcon;
+      renderIcons();
+    });
+  });
+}
+
+function renderCategoryPicker() {
+  categoryPicker.innerHTML = categories.map((name, index) => (
+    `<button class="category-option ${index === formCategory ? 'selected' : ''}" data-index="${index}">${name}</button>`
+  )).join('');
+
+  categoryPicker.querySelectorAll('.category-option').forEach(button => {
+    button.addEventListener('click', () => {
+      formCategory = Number(button.dataset.index);
+      if (!editingId) {
+        selectedIcon = icons[formCategory] || '其';
+        iconPicker.textContent = selectedIcon;
+      }
+      renderCategoryPicker();
+      renderIcons();
+    });
+  });
+}
+
+function openAdd() {
+  editingId = '';
+  formCategory = activeCategory;
+  selectedIcon = icons[formCategory] || '其';
+  document.getElementById('goodsName').value = '';
+  document.getElementById('goodsPrice').value = '';
+  document.getElementById('goodsDesc').value = '';
+  modalCategory.textContent = '把它放到合适的分类里。';
+  iconPicker.textContent = selectedIcon;
+  renderCategoryPicker();
+  renderIcons();
+  addMask.classList.add('show');
+}
+
+function openEdit(item) {
+  editingId = item.id;
+  formCategory = item.category;
+  activeCategory = formCategory;
+  selectedIcon = item.icon;
+  document.getElementById('goodsName').value = item.name;
+  document.getElementById('goodsPrice').value = item.price;
+  document.getElementById('goodsDesc').value = item.desc;
+  modalCategory.textContent = '把它放到合适的分类里。';
+  iconPicker.textContent = selectedIcon;
+  renderTabs();
+  renderCategoryPicker();
+  renderIcons();
+  addMask.classList.add('show');
+}
+
+function closeAdd() {
+  addMask.classList.remove('show');
+}
+
+function addGoods() {
+  const name = document.getElementById('goodsName').value.trim();
+  const price = Number(document.getElementById('goodsPrice').value);
+  const desc = document.getElementById('goodsDesc').value.trim() || '暂无描述';
+
+  if (!name) {
+    alert('请输入商品名称');
+    return;
+  }
+
+  if (!Number.isFinite(price) || price <= 0) {
+    alert('请输入有效价格');
+    return;
+  }
+
+  const next = {
+    id: editingId || `goods-${Date.now()}`,
+    category: formCategory,
+    icon: selectedIcon,
+    name,
+    price,
+    desc
+  };
+
+  goods = editingId
+    ? goods.map(item => item.id === editingId ? next : item)
+    : [next, ...goods];
+
+  editingId = '';
+  activeCategory = next.category;
+  closeAdd();
+  renderTabs();
+  renderContent();
+}
+
+document.getElementById('openAddTop').addEventListener('click', openAdd);
+document.getElementById('openOrders').addEventListener('click', () => alert('这里对应小程序里的订单管理页'));
+document.getElementById('loginBtn').addEventListener('click', showOrderPage);
+document.getElementById('closeAdd').addEventListener('click', closeAdd);
+document.getElementById('cancelAdd').addEventListener('click', closeAdd);
+document.getElementById('confirmAdd').addEventListener('click', addGoods);
+document.getElementById('checkoutBtn').addEventListener('click', () => {
+  cartCount = 0;
+  cartTotal = 0;
+  cartBar.style.display = 'none';
+  alert('下单成功');
+});
+searchInput.addEventListener('input', renderContent);
+
+renderTabs();
+renderContent();
+</script>
+</body>
+</html>
