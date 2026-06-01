@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <view class="page">
     <view class="top-row">
       <view class="back-btn" @click="goBack">‹</view>
@@ -7,7 +7,7 @@
 
     <view class="hero">
       <text class="title">加入 Corn's Menu</text>
-      <text class="subtitle">注册后即可体验菜单维护、购物车和模拟下单流程</text>
+      <text class="subtitle">注册成功后会自动进入你的专属菜单。</text>
     </view>
 
     <view class="form-panel">
@@ -20,6 +20,7 @@
             v-model="account"
             placeholder="至少 3 个字符"
             placeholder-class="placeholder"
+            maxlength="20"
             @focus="focusAccount = true"
             @blur="focusAccount = false"
           />
@@ -33,15 +34,17 @@
           <text class="field-icon">锁</text>
           <input
             class="input"
-            :type="showPassword ? 'text' : 'password'"
+            type="text"
+            :password="!showPassword"
             v-model="password"
             placeholder="至少 6 位"
             placeholder-class="placeholder"
+            maxlength="24"
             @focus="focusPassword = true"
             @blur="focusPassword = false"
           />
           <text class="toggle-pw" @click="showPassword = !showPassword">
-            {{ showPassword ? '隐藏' : '显示' }}
+            {{ showPassword ? '隐藏密码' : '显示密码' }}
           </text>
         </view>
         <text class="error-msg" v-if="passwordError">{{ passwordError }}</text>
@@ -53,15 +56,17 @@
           <text class="field-icon">验</text>
           <input
             class="input"
-            :type="showConfirm ? 'text' : 'password'"
+            type="text"
+            :password="!showConfirm"
             v-model="confirmPassword"
             placeholder="再次输入密码"
             placeholder-class="placeholder"
+            maxlength="24"
             @focus="focusConfirm = true"
             @blur="focusConfirm = false"
           />
           <text class="toggle-pw" @click="showConfirm = !showConfirm">
-            {{ showConfirm ? '隐藏' : '显示' }}
+            {{ showConfirm ? '隐藏密码' : '显示密码' }}
           </text>
         </view>
         <text class="error-msg" v-if="confirmError">{{ confirmError }}</text>
@@ -73,14 +78,8 @@
         <text :class="{ active: password && confirmPassword === password }">两次一致</text>
       </view>
 
-      <button
-        class="primary-btn"
-        :class="{ loading: isLoading }"
-        :disabled="isLoading"
-        @click="handleRegister"
-      >
-        <text v-if="!isLoading">注册</text>
-        <text v-else>创建中...</text>
+      <button class="primary-btn" :disabled="isLoading" @click="handleRegister">
+        <text>{{ isLoading ? '正在创建...' : '注册并进入' }}</text>
       </button>
 
       <view class="login-row">
@@ -89,16 +88,17 @@
       </view>
     </view>
 
-    <view class="success-overlay" :class="{ show: showSuccess }" @click="goBack">
-      <view class="checkmark">✓</view>
-      <text class="success-title">注册成功</text>
-      <text class="success-desc">点击返回登录页，账号会自动填入</text>
+    <view class="transition-mask" :class="{ show: isLoading }">
+      <view class="loader"></view>
+      <text class="transition-title">正在创建账号</text>
+      <text class="transition-desc">马上进入你的专属页面</text>
     </view>
   </view>
 </template>
 
 <script setup>
 import { ref } from 'vue'
+import { clearCurrentAccountState, createSession, createUser, getEntryPage } from '../../utils/auth'
 
 const account = ref('')
 const password = ref('')
@@ -109,7 +109,6 @@ const focusConfirm = ref(false)
 const showPassword = ref(false)
 const showConfirm = ref(false)
 const isLoading = ref(false)
-const showSuccess = ref(false)
 const accountError = ref('')
 const passwordError = ref('')
 const confirmError = ref('')
@@ -120,14 +119,15 @@ function clearErrors() {
   confirmError.value = ''
 }
 
-function handleRegister() {
+async function handleRegister() {
   clearErrors()
+  const accountText = account.value.trim()
   let hasError = false
 
-  if (!account.value.trim()) {
+  if (!accountText) {
     accountError.value = '请输入账号'
     hasError = true
-  } else if (account.value.trim().length < 3) {
+  } else if (accountText.length < 3) {
     accountError.value = '账号至少 3 个字符'
     hasError = true
   }
@@ -150,28 +150,28 @@ function handleRegister() {
 
   if (hasError) return
 
-  const users = uni.getStorageSync('registeredUsers') || []
-  if (users.find(u => u.account === account.value.trim())) {
-    accountError.value = '该账号已被注册'
-    return
-  }
-
   isLoading.value = true
-  setTimeout(() => {
+  try {
+    clearCurrentAccountState()
+    const user = await createUser(accountText, password.value)
+    const session = createSession(user, false, 'user')
+    account.value = ''
+    password.value = ''
+    confirmPassword.value = ''
+    setTimeout(() => {
+      uni.reLaunch({ url: getEntryPage(session.role) })
+    }, 320)
+  } catch (error) {
     isLoading.value = false
-    users.push({ account: account.value.trim(), password: password.value })
-    uni.setStorageSync('registeredUsers', users)
-    showSuccess.value = true
-  }, 800)
+    if (error.code === 'account-exists') {
+      accountError.value = '该账号已被注册'
+    } else {
+      uni.showToast({ title: error.message || '注册失败，请重试', icon: 'none' })
+    }
+  }
 }
 
 function goBack() {
-  if (account.value.trim() || password.value) {
-    uni.$emit('fillLogin', {
-      account: account.value.trim(),
-      password: password.value
-    })
-  }
   uni.navigateBack()
 }
 </script>
@@ -191,6 +191,7 @@ page {
     radial-gradient(circle at 18% 10%, rgba(255, 214, 10, 0.14), transparent 30%),
     radial-gradient(circle at 84% 16%, rgba(199, 216, 107, 0.12), transparent 28%),
     linear-gradient(180deg, #FAF9F4 0%, #F7F6F1 56%, #F2F2ED 100%);
+  animation: fade-in 0.24s ease both;
 }
 
 .top-row {
@@ -212,7 +213,6 @@ page {
   line-height: 1;
   border: 1px solid rgba(60, 60, 67, 0.10);
   box-shadow: 0 10rpx 28rpx rgba(60, 60, 67, 0.08);
-  backdrop-filter: blur(20rpx);
 }
 
 .top-label {
@@ -272,7 +272,6 @@ page {
   align-items: center;
   padding: 0 22rpx;
   box-sizing: border-box;
-  transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
 }
 
 .form-group.focused .input-wrap {
@@ -359,10 +358,6 @@ page {
   border: 0;
 }
 
-.primary-btn[disabled] {
-  opacity: 0.78;
-}
-
 .login-row {
   margin-top: 30rpx;
   display: flex;
@@ -382,7 +377,7 @@ page {
   color: #A85F00;
 }
 
-.success-overlay {
+.transition-mask {
   position: fixed;
   inset: 0;
   background: rgba(247, 246, 241, 0.96);
@@ -390,39 +385,50 @@ page {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 22rpx;
+  gap: 18rpx;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.25s;
+  transition: opacity 0.2s ease;
   z-index: 100;
 }
 
-.success-overlay.show {
+.transition-mask.show {
   opacity: 1;
   pointer-events: all;
 }
 
-.checkmark {
-  width: 118rpx;
-  height: 118rpx;
+.loader {
+  width: 74rpx;
+  height: 74rpx;
   border-radius: 50%;
-  background: #D7E58D;
-  color: #1D1D1F;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 62rpx;
-  font-weight: 900;
+  border: 8rpx solid rgba(255, 179, 64, 0.25);
+  border-top-color: #FFB340;
+  animation: spin 0.8s linear infinite;
 }
 
-.success-title {
-  font-size: 38rpx;
+.transition-title {
+  font-size: 34rpx;
   font-weight: 900;
   color: #1D1D1F;
 }
 
-.success-desc {
-  font-size: 27rpx;
+.transition-desc {
+  font-size: 25rpx;
   color: #6E6E73;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 </style>

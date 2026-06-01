@@ -1,8 +1,10 @@
 <script>
 import { CLOUD_ENV_ID } from './config/cloud'
+import { resetLocalDataOnce } from './utils/auth'
 
 export default {
   onLaunch: function () {
+    resetLocalDataOnce()
     if (typeof wx !== 'undefined' && wx.cloud && CLOUD_ENV_ID) {
       wx.cloud.init({
         env: CLOUD_ENV_ID,

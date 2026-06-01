@@ -33,10 +33,29 @@ export const CLOUD_ENV_ID = '你的云环境ID'
 
 - `products`
 - `orders`
+- `admins`
 
 建议先把两个集合权限设为「仅创建者可读写」或「所有用户可读，仅创建者可写」做测试。
 
 如果你希望你能看见女朋友下的订单，正式使用时建议通过云函数读写订单，不让前端直接操作数据库。当前代码已经走云函数。
+
+### 管理员权限
+
+订单「完成订单」操作会在云函数里校验管理员身份，普通用户即使绕过前端调用接口也不能完成订单。
+
+任选一种方式配置管理员：
+
+1. 在云函数 `menuApi` 的环境变量里添加 `ADMIN_OPENIDS`，值为你的 openid。多个 openid 用英文逗号分隔。
+2. 或者创建 `admins` 集合，添加一条记录：
+
+```json
+{
+  "openid": "你的 openid",
+  "enabled": true
+}
+```
+
+配置后需要重新上传并部署 `cloudfunctions/menuApi`。
 
 ## 4. 本地兜底
 
@@ -52,5 +71,6 @@ export const CLOUD_ENV_ID = '你的云环境ID'
 1. `src/manifest.json` 填入微信小程序 AppID
 2. `src/config/cloud.js` 填入云环境 ID
 3. 上传部署 `menuApi`
-4. 创建 `products` 和 `orders` 集合
-5. 在微信开发者工具中重新编译并预览
+4. 创建 `products`、`orders` 和 `admins` 集合
+5. 配置管理员 openid
+6. 在微信开发者工具中重新编译并预览

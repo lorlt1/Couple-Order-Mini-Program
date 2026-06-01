@@ -1,17 +1,12 @@
-﻿<template>
+<template>
   <view class="page">
     <view class="top-bar">
       <view>
         <text class="store-label">Corn's Menu</text>
-        <text class="top-title">订单管理</text>
-        <text class="top-subtitle">查看她下单想要什么，并更新处理状态。</text>
-      </view>
-    </view>
-
-    <view class="quick-actions">
-      <view class="quick-btn" @click="goBack">
-        <text class="quick-icon">‹</text>
-        <text>返回点单台</text>
+        <text class="top-title">{{ isManager ? '订单管理' : '我的订单' }}</text>
+        <text class="top-subtitle">
+          {{ isManager ? '处理当前账号收到的订单。' : '只显示你自己的点单记录。' }}
+        </text>
       </view>
     </view>
 
@@ -22,7 +17,7 @@
       </view>
       <view>
         <text class="summary-num highlight">{{ activeCount }}</text>
-        <text class="summary-label">待完成</text>
+        <text class="summary-label">进行中</text>
       </view>
       <view>
         <text class="summary-num">{{ doneCount }}</text>
@@ -31,37 +26,53 @@
     </view>
 
     <view class="pending-notice" v-if="activeCount">
-      <text class="notice-title">有 {{ activeCount }} 个订单待完成</text>
-      <text class="notice-desc">处理好后点完成，她就知道你已经看到啦。</text>
+      <text class="notice-title">{{ activeCount }} 个订单还在进行中</text>
+      <text class="notice-desc">
+        {{ isManager ? '处理好后点击确认完成。' : '等待处理时可以取消或催一下。' }}
+      </text>
     </view>
 
-    <scroll-view class="orders-list" scroll-y>
+    <view class="skeleton" v-if="isLoading">
+      <view></view>
+      <view></view>
+      <view></view>
+    </view>
+
+    <scroll-view class="orders-list" scroll-y v-else>
       <view class="empty-state" v-if="!orders.length">
         <view class="empty-icon">单</view>
         <text class="empty-title">还没有订单</text>
-        <text class="empty-desc">她下单后，你会在这里看到想要的商品。</text>
+        <text class="empty-desc">{{ isManager ? '用户下单后，你会在这里看到想要的商品。' : '去点单页选点喜欢的吧。' }}</text>
+        <view class="empty-action" v-if="!isManager" @click="goOrder">去点单</view>
       </view>
 
       <view
         class="order-card"
-        :class="{ pending: order.status !== 'done', finished: order.status === 'done' }"
+        :class="{ pending: isActive(order), reminded: isManager && hasReminder(order), finished: order.status === 'done', cancelled: order.status === 'cancelled' }"
         v-for="order in sortedOrders"
         :key="order.id"
       >
         <view class="order-head">
-          <view>
+          <view class="order-head-main">
             <text class="order-title">{{ formatTime(order.createdAt) }}</text>
-            <text class="order-sub">{{ order.totalCount }} 件 · 合计 ¥{{ order.totalPrice }}</text>
+            <text class="order-sub">{{ order.totalCount || orderItemCount(order) }} 件</text>
           </view>
           <text class="status-pill" :class="order.status">{{ statusText(order.status) }}</text>
         </view>
 
+        <view class="remind-alert" v-if="isManager && hasReminder(order)">
+          <text class="remind-title">对方催了一下</text>
+          <text class="remind-text">已提醒 {{ order.remindCount || 1 }} 次 · {{ formatTime(order.remindedAt) }}</text>
+        </view>
+
         <view class="order-items">
-          <view class="order-item" v-for="item in order.items" :key="item.id">
-            <text class="item-icon">{{ item.icon }}</text>
+          <view class="order-item" v-for="item in order.items" :key="`${item.id || ''}:${item.sugar || ''}:${item.name || ''}`">
+            <image class="item-image" v-if="item.imageUrl" :src="item.imageUrl" mode="aspectFit" />
+            <text class="item-icon" v-else>{{ fallbackText(item) }}</text>
             <view class="item-main">
-              <text class="item-name">{{ item.name }}</text>
-              <text class="item-meta">¥{{ item.price }} × {{ item.count }}</text>
+              <text class="item-name">{{ item.name || '未命名商品' }}</text>
+              <text class="item-meta">{{ item.count || 1 }} 件{{ item.brand && item.brand !== '自定义' ? ' · ' + item.brand : '' }}{{ item.sugar ? ' · ' + item.sugar : '' }}</text>
+              <text class="item-note" v-if="itemNote(item)">描述：{{ itemNote(item) }}</text>
             </view>
           </view>
         </view>
@@ -71,74 +82,203 @@
           <text class="note-text">{{ order.note }}</text>
         </view>
 
-        <view class="order-actions" v-if="order.status !== 'done'">
-          <view class="action-btn primary" @click="finishOrder(order.id)">完成这个订单</view>
+        <view class="order-actions" v-if="isManager">
+          <view class="action-btn primary" v-if="isActive(order)" @click="finishOrder(order.id)">确认完成</view>
+          <view class="action-btn danger" @click="deleteOrderRecord(order)">删除记录</view>
+        </view>
+
+        <view class="order-actions user-actions" v-else>
+          <view class="action-btn ghost" v-if="order.status === 'pending'" @click="cancelUserOrder(order.id)">取消订单</view>
+          <view class="action-btn ghost" v-if="order.status === 'pending'" @click="remindUserOrder(order)">催一下</view>
+          <view class="action-btn primary" v-if="order.status === 'done'" @click="buyAgain(order)">再次购买</view>
+          <view class="action-btn disabled" v-if="order.status === 'cancelled'">订单已取消</view>
+          <view class="action-btn danger" @click="deleteOrderRecord(order)">删除记录</view>
         </view>
       </view>
     </scroll-view>
+
+    <BottomNav active="orders" />
   </view>
 </template>
 
 <script setup>
 import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
-import { listOrders, updateOrderStatus } from '../../utils/menuApi'
+import BottomNav from '../../components/BottomNav.vue'
+import { cancelOrder, deleteOrder, getErrorMessage, listOrders, remindOrder, updateOrderStatus } from '../../utils/menuApi'
+import { getSession, isAdmin } from '../../utils/auth'
 
 const orders = ref([])
+const isManager = ref(false)
+const isLoading = ref(true)
+const activeAccount = ref('')
 
-onShow(() => {
-  loadOrders()
+onShow(async () => {
+  const session = getSession()
+  if (!session) {
+    uni.reLaunch({ url: '/pages/index/index' })
+    return
+  }
+  const accountKey = session.userId || session.account
+  if (activeAccount.value && activeAccount.value !== accountKey) {
+    orders.value = []
+  }
+  activeAccount.value = accountKey
+  isManager.value = isAdmin()
+  await loadOrders()
 })
 
-const activeCount = computed(() => orders.value.filter(order => order.status !== 'done').length)
+const activeCount = computed(() => orders.value.filter(order => isActive(order)).length)
 const doneCount = computed(() => orders.value.filter(order => order.status === 'done').length)
 const sortedOrders = computed(() => {
   return [...orders.value].sort((a, b) => {
-    const aDone = a.status === 'done'
-    const bDone = b.status === 'done'
-    if (aDone !== bDone) {
-      return aDone ? 1 : -1
-    }
+    const aInactive = !isActive(a)
+    const bInactive = !isActive(b)
+    if (aInactive !== bInactive) return aInactive ? 1 : -1
     return Number(b.createdAt || 0) - Number(a.createdAt || 0)
   })
 })
 
 async function loadOrders() {
-  orders.value = await listOrders()
+  isLoading.value = true
+  try {
+    orders.value = await listOrders()
+  } catch (error) {
+    orders.value = []
+    uni.showToast({ title: getErrorMessage(error, '订单加载失败'), icon: 'none' })
+  } finally {
+    isLoading.value = false
+  }
 }
 
-async function updateStatus(orderId, status) {
+function isActive(order) {
+  return order.status !== 'done' && order.status !== 'cancelled'
+}
+
+function hasReminder(order) {
+  return Number(order.remindCount || 0) > 0 && order.status === 'pending'
+}
+
+async function finishOrder(orderId) {
+  if (!isManager.value) return
+  const previous = [...orders.value]
   orders.value = orders.value.map(order => (
-    order.id === orderId ? { ...order, status } : order
+    order.id === orderId ? { ...order, status: 'done' } : order
   ))
-  await updateOrderStatus(orderId, status)
-  uni.showToast({ title: '状态已更新', icon: 'none' })
+
+  try {
+    await updateOrderStatus(orderId, 'done')
+    uni.showToast({ title: '订单已完成', icon: 'none' })
+  } catch (error) {
+    orders.value = previous
+    uni.showToast({ title: getErrorMessage(error, '状态更新失败'), icon: 'none' })
+  }
 }
 
-function finishOrder(orderId) {
-  updateStatus(orderId, 'done')
+async function cancelUserOrder(orderId) {
+  const previous = [...orders.value]
+  orders.value = orders.value.map(order => (
+    order.id === orderId ? { ...order, status: 'cancelled' } : order
+  ))
+
+  try {
+    await cancelOrder(orderId)
+    uni.showToast({ title: '订单已取消', icon: 'none' })
+  } catch (error) {
+    orders.value = previous
+    uni.showToast({ title: getErrorMessage(error, '取消失败'), icon: 'none' })
+  }
+}
+
+async function remindUserOrder(order) {
+  if (order.status !== 'pending') {
+    uni.showToast({ title: '订单进行中才可以催单', icon: 'none' })
+    return
+  }
+  const previous = [...orders.value]
+  const now = Date.now()
+  orders.value = orders.value.map(item => (
+    item.id === order.id
+      ? { ...item, remindCount: Number(item.remindCount || 0) + 1, remindedAt: now }
+      : item
+  ))
+
+  try {
+    const saved = await remindOrder(order.id)
+    orders.value = orders.value.map(item => item.id === order.id ? { ...item, ...saved } : item)
+    uni.showToast({ title: '已提醒对方', icon: 'none' })
+  } catch (error) {
+    orders.value = previous
+    uni.showToast({ title: getErrorMessage(error, '提醒失败，请稍后重试'), icon: 'none' })
+  }
+}
+
+function deleteOrderRecord(order) {
+  uni.showModal({
+    title: '删除订单',
+    content: `确定删除「${orderTitle(order)}」这条记录吗？`,
+    confirmText: '删除',
+    confirmColor: '#d95745',
+    success: async (res) => {
+      if (!res.confirm) return
+      const previous = [...orders.value]
+      orders.value = orders.value.filter(item => item.id !== order.id)
+      try {
+        await deleteOrder(order.id)
+        uni.showToast({ title: '已删除', icon: 'none' })
+      } catch (error) {
+        orders.value = previous
+        uni.showToast({ title: getErrorMessage(error, '删除失败'), icon: 'none' })
+      }
+    }
+  })
+}
+
+function buyAgain(order) {
+  const session = getSession()
+  const key = `cornMenuPendingReorder:${session?.userId || session?.account || 'guest'}`
+  uni.setStorageSync(key, (order.items || []).map(item => ({ ...item })))
+  uni.redirectTo({ url: '/pages/order/order' })
+}
+
+function goOrder() {
+  uni.redirectTo({ url: '/pages/order/order' })
 }
 
 function statusText(status) {
   const map = {
-    pending: '待完成',
-    arranged: '待完成',
-    done: '已完成'
+    pending: '待处理',
+    arranged: '待处理',
+    done: '已完成',
+    cancelled: '已取消'
   }
-  return map[status] || '待完成'
+  return map[status] || '待处理'
+}
+
+function orderTitle(order) {
+  return (order.items || []).map(item => item.name).filter(Boolean).slice(0, 2).join('、') || '订单'
+}
+
+function orderItemCount(order) {
+  return (order.items || []).reduce((sum, item) => sum + Number(item.count || 1), 0)
+}
+
+function itemNote(item = {}) {
+  return String(item.note || item.remark || item.desc || '').trim()
+}
+
+function fallbackText(item) {
+  return String((item && (item.brand || item.name || item.icon)) || '饮').slice(0, 2)
 }
 
 function formatTime(timestamp) {
+  if (!timestamp) return '刚刚'
   const date = new Date(timestamp)
   const month = String(date.getMonth() + 1).padStart(2, '0')
   const day = String(date.getDate()).padStart(2, '0')
   const hour = String(date.getHours()).padStart(2, '0')
   const minute = String(date.getMinutes()).padStart(2, '0')
   return `${month}-${day} ${hour}:${minute}`
-}
-
-function goBack() {
-  uni.navigateBack()
 }
 </script>
 
@@ -151,162 +291,122 @@ page {
 <style scoped>
 .page {
   min-height: 100vh;
-  background: #F7F6F1;
-  padding-bottom: 36rpx;
+  padding: 118rpx 32rpx 0;
   box-sizing: border-box;
+  background:
+    radial-gradient(circle at 82% 0%, rgba(255, 214, 10, 0.13), transparent 34%),
+    linear-gradient(180deg, #FAF9F4 0%, #F7F6F1 52%, #F2F2ED 100%);
 }
 
 .top-bar {
-  padding: 124rpx 32rpx 52rpx;
-  background:
-    radial-gradient(circle at 82% 0%, rgba(255, 214, 10, 0.18), transparent 34%),
-    linear-gradient(180deg, #FAF9F4 0%, #F7F6F1 100%);
-  display: flex;
-  align-items: flex-start;
-  color: #1D1D1F;
+  margin-bottom: 26rpx;
 }
 
 .store-label {
   display: block;
   font-size: 24rpx;
   font-weight: 800;
-  color: #8E8E93;
+  color: #A85F00;
   margin-bottom: 16rpx;
-  line-height: 1.45;
 }
 
 .top-title {
   display: block;
-  font-size: 48rpx;
+  font-size: 50rpx;
   font-weight: 900;
-  line-height: 1.26;
+  color: #1D1D1F;
+  line-height: 1.28;
 }
 
 .top-subtitle {
   display: block;
-  max-width: 500rpx;
-  margin-top: 20rpx;
+  margin-top: 18rpx;
   font-size: 25rpx;
   color: #6E6E73;
-  line-height: 1.7;
+  line-height: 1.78;
 }
 
-.quick-actions {
-  padding: 0 32rpx 22rpx;
-  margin-top: -20rpx;
-  box-sizing: border-box;
-}
-
-.quick-btn {
-  height: 76rpx;
-  border-radius: 24rpx;
-  background: rgba(255, 255, 255, 0.82);
-  color: #1D1D1F;
+.summary-card,
+.pending-notice,
+.order-card {
+  border-radius: 30rpx;
+  background: rgba(255, 255, 255, 0.88);
   border: 1px solid rgba(60, 60, 67, 0.10);
-  box-shadow: 0 8rpx 22rpx rgba(60, 60, 67, 0.08);
-  backdrop-filter: blur(20rpx);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12rpx;
-  font-size: 26rpx;
-  font-weight: 900;
-}
-
-.quick-icon {
-  width: 34rpx;
-  height: 34rpx;
-  border-radius: 12rpx;
-  background: rgba(255, 159, 10, 0.16);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 28rpx;
-  font-weight: 900;
+  box-shadow: 0 12rpx 30rpx rgba(60, 60, 67, 0.08);
 }
 
 .summary-card {
-  margin: 0 32rpx 24rpx;
   padding: 28rpx;
-  border-radius: 30rpx;
-  background: rgba(255, 255, 255, 0.86);
-  border: 1px solid rgba(60, 60, 67, 0.10);
-  box-shadow: 0 12rpx 30rpx rgba(60, 60, 67, 0.10);
-  backdrop-filter: blur(24rpx);
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 18rpx;
-}
-
-.summary-card > view {
-  display: flex;
-  flex-direction: column;
-  gap: 6rpx;
+  margin-bottom: 22rpx;
 }
 
 .summary-num {
-  font-size: 42rpx;
+  display: block;
+  font-size: 34rpx;
   font-weight: 900;
   color: #1D1D1F;
+  line-height: 1.35;
 }
 
 .summary-num.highlight {
-  color: #6D7F00;
+  color: #A85F00;
 }
 
 .summary-label {
-  font-size: 23rpx;
+  display: block;
+  margin-top: 8rpx;
+  font-size: 22rpx;
   color: #8E8E93;
 }
 
 .pending-notice {
-  margin: 0 32rpx 24rpx;
-  padding: 22rpx 26rpx;
-  border-radius: 26rpx;
-  background: rgba(255, 179, 64, 0.18);
-  border: 1px solid rgba(255, 159, 10, 0.22);
-  display: flex;
-  flex-direction: column;
-  gap: 6rpx;
+  padding: 24rpx 28rpx;
+  margin-bottom: 22rpx;
+  background: rgba(255, 179, 64, 0.15);
+  border-color: rgba(255, 159, 10, 0.20);
 }
 
 .notice-title {
-  font-size: 28rpx;
-  font-weight: 900;
+  display: block;
+  font-size: 27rpx;
   color: #1D1D1F;
-  line-height: 1.42;
+  font-weight: 900;
 }
 
 .notice-desc {
-  font-size: 23rpx;
+  display: block;
+  margin-top: 8rpx;
+  font-size: 24rpx;
   color: #6E6E73;
 }
 
 .orders-list {
-  padding: 0 32rpx;
+  height: calc(100vh - 390rpx);
+  padding-bottom: calc(180rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;
-  max-height: calc(100vh - 342rpx);
 }
 
 .empty-state {
-  min-height: 460rpx;
+  min-height: 420rpx;
   border-radius: 28rpx;
   border: 1px dashed rgba(60, 60, 67, 0.18);
-  background: rgba(255, 255, 255, 0.72);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 14rpx;
-  padding: 44rpx 28rpx;
+  padding: 34rpx;
+  box-sizing: border-box;
 }
 
 .empty-icon {
-  width: 96rpx;
-  height: 96rpx;
+  width: 86rpx;
+  height: 86rpx;
   border-radius: 28rpx;
-  background: #FFE6A7;
-  color: #1D1D1F;
+  background: #FFF4CB;
+  color: #A85F00;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -315,41 +415,50 @@ page {
 }
 
 .empty-title {
-  font-size: 31rpx;
-  font-weight: 900;
+  margin-top: 24rpx;
+  font-size: 32rpx;
   color: #1D1D1F;
+  font-weight: 900;
 }
 
 .empty-desc {
-  font-size: 25rpx;
-  color: #6E6E73;
+  margin-top: 12rpx;
+  font-size: 24rpx;
+  color: #8E8E93;
+  line-height: 1.6;
   text-align: center;
-  line-height: 1.4;
+}
+
+.empty-action {
+  margin-top: 26rpx;
+  height: 74rpx;
+  padding: 0 34rpx;
+  border-radius: 22rpx;
+  background: #FF9F0A;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26rpx;
+  font-weight: 900;
 }
 
 .order-card {
-  background: rgba(255, 255, 255, 0.88);
-  border-radius: 30rpx;
-  padding: 28rpx;
+  padding: 26rpx;
   margin-bottom: 22rpx;
-  border: 1px solid rgba(60, 60, 67, 0.10);
-  box-shadow: 0 8rpx 24rpx rgba(60, 60, 67, 0.08);
 }
 
 .order-card.pending {
-  border-color: rgba(255, 159, 10, 0.26);
-  box-shadow: 0 12rpx 28rpx rgba(255, 159, 10, 0.12);
+  border-color: rgba(255, 159, 10, 0.24);
 }
 
-.order-card.finished {
-  background: rgba(255, 255, 255, 0.72);
-  box-shadow: none;
+.order-card.reminded {
+  border-color: rgba(217, 87, 69, 0.34);
 }
 
-.order-card.finished .order-title,
-.order-card.finished .item-name,
-.order-card.finished .note-text {
-  color: #8E8E93;
+.order-card.finished,
+.order-card.cancelled {
+  opacity: 0.78;
 }
 
 .order-head {
@@ -360,28 +469,31 @@ page {
   margin-bottom: 22rpx;
 }
 
+.order-head-main {
+  min-width: 0;
+}
+
 .order-title {
   display: block;
-  font-size: 31rpx;
+  font-size: 30rpx;
   font-weight: 900;
   color: #1D1D1F;
-  margin-bottom: 10rpx;
-  line-height: 1.35;
 }
 
 .order-sub {
   display: block;
-  font-size: 24rpx;
+  margin-top: 8rpx;
+  font-size: 23rpx;
   color: #8E8E93;
-  line-height: 1.45;
+  font-weight: 800;
 }
 
 .status-pill {
-  height: 46rpx;
+  height: 48rpx;
   padding: 0 18rpx;
   border-radius: 18rpx;
-  background: rgba(255, 179, 64, 0.18);
-  color: #1D1D1F;
+  background: rgba(242, 242, 247, 0.92);
+  color: #6E6E73;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -389,29 +501,146 @@ page {
   font-weight: 900;
 }
 
+.status-pill.pending,
+.status-pill.arranged {
+  background: rgba(255, 159, 10, 0.16);
+  color: #A85F00;
+}
+
 .status-pill.done {
-  background: rgba(215, 229, 141, 0.52);
-  color: #1D1D1F;
+  background: rgba(52, 199, 89, 0.13);
+  color: #1f8f3a;
+}
+
+.status-pill.cancelled {
+  background: rgba(217, 87, 69, 0.12);
+  color: #d95745;
+}
+
+.remind-alert {
+  padding: 20rpx;
+  border-radius: 20rpx;
+  background: rgba(217, 87, 69, 0.09);
+  border: 1px solid rgba(217, 87, 69, 0.16);
+  margin-bottom: 18rpx;
+}
+
+.remind-title,
+.remind-text {
+  display: block;
+  font-size: 23rpx;
+  color: #d95745;
+  font-weight: 900;
+}
+
+.remind-text {
+  margin-top: 6rpx;
+  color: #6E6E73;
 }
 
 .order-items {
   display: flex;
   flex-direction: column;
-  gap: 16rpx;
+  gap: 14rpx;
 }
 
 .order-item {
+  min-height: 86rpx;
+  padding: 14rpx;
+  border-radius: 18rpx;
+  background: rgba(242, 242, 247, 0.70);
   display: flex;
   align-items: center;
-  gap: 16rpx;
+  gap: 14rpx;
+}
+
+.item-image,
+.item-icon {
+  width: 62rpx;
+  height: 62rpx;
+  border-radius: 18rpx;
+  flex-shrink: 0;
 }
 
 .item-icon {
-  width: 56rpx;
-  height: 56rpx;
-  border-radius: 18rpx;
   background: #FFF4CB;
+  color: #A85F00;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 23rpx;
+  font-weight: 900;
+}
+
+.item-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.item-name {
+  display: block;
+  font-size: 26rpx;
   color: #1D1D1F;
+  font-weight: 900;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.item-meta {
+  display: block;
+  margin-top: 8rpx;
+  font-size: 22rpx;
+  color: #8E8E93;
+  line-height: 1.45;
+}
+
+.item-note {
+  display: block;
+  margin-top: 8rpx;
+  font-size: 22rpx;
+  color: #6E6E73;
+  line-height: 1.5;
+  white-space: normal;
+  word-break: break-all;
+}
+
+.order-note {
+  margin-top: 18rpx;
+  padding: 18rpx 20rpx;
+  border-radius: 20rpx;
+  background: rgba(255, 244, 203, 0.48);
+}
+
+.note-label,
+.note-text {
+  display: block;
+  font-size: 24rpx;
+  font-weight: 900;
+}
+
+.note-label {
+  color: #A85F00;
+}
+
+.note-text {
+  margin-top: 8rpx;
+  color: #1D1D1F;
+  line-height: 1.66;
+}
+
+.order-actions {
+  display: flex;
+  gap: 14rpx;
+  margin-top: 24rpx;
+  flex-wrap: wrap;
+}
+
+.action-btn {
+  flex: 1;
+  min-width: 176rpx;
+  height: 74rpx;
+  border-radius: 22rpx;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -419,65 +648,42 @@ page {
   font-weight: 900;
 }
 
-.item-main {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 4rpx;
-}
-
-.item-name {
-  font-size: 27rpx;
-  font-weight: 900;
-  color: #1D1D1F;
-}
-
-.item-meta {
-  font-size: 23rpx;
-  color: #8E8E93;
-}
-
-.order-note {
-  margin-top: 22rpx;
-  padding: 18rpx;
-  border-radius: 20rpx;
-  background: rgba(242, 242, 247, 0.70);
-  display: flex;
-  flex-direction: column;
-  gap: 6rpx;
-}
-
-.note-label {
-  font-size: 22rpx;
-  font-weight: 900;
-  color: #8E8E93;
-}
-
-.note-text {
-  font-size: 26rpx;
-  font-weight: 800;
-  color: #1D1D1F;
-  line-height: 1.62;
-}
-
-.order-actions {
-  display: flex;
-  margin-top: 24rpx;
-}
-
-.action-btn {
-  flex: 1;
-  height: 74rpx;
-  border-radius: 22rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 26rpx;
-  font-weight: 900;
-}
-
 .action-btn.primary {
   background: #FF9F0A;
   color: #fff;
+}
+
+.action-btn.ghost {
+  background: rgba(242, 242, 247, 0.92);
+  color: #1D1D1F;
+}
+
+.action-btn.danger {
+  background: rgba(217, 87, 69, 0.11);
+  color: #d95745;
+}
+
+.action-btn.disabled {
+  background: rgba(242, 242, 247, 0.72);
+  color: #8E8E93;
+}
+
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 18rpx;
+}
+
+.skeleton view {
+  height: 168rpx;
+  border-radius: 28rpx;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.62), rgba(255, 244, 203, 0.72), rgba(255, 255, 255, 0.62));
+  animation: shimmer 1s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  50% {
+    opacity: 0.55;
+  }
 }
 </style>

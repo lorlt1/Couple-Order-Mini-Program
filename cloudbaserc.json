@@ -1,0 +1,21 @@
+{
+  "$schema": "https://static.cloudbase.net/cli/cloudbaserc.schema.json",
+  "envId": "cloud1-d8gr5llwc89362fbb",
+  "functionRoot": "cloudfunctions",
+  "functions": [
+    {
+      "name": "menuApi",
+      "runtime": "Nodejs18.15",
+      "handler": "index.main",
+      "timeout": 60,
+      "memorySize": 256,
+      "envVariables": {
+        "IMAGE_EDIT_MODEL": "gpt-image-2",
+        "VISION_API_KEY": "YOUR_VISION_API_KEY",
+        "VISION_BASE_URL": "YOUR_VISION_BASE_URL",
+        "VISION_MODEL": "gpt-5.4-mini",
+        "REMOVE_BG_API_KEY": "YOUR_REMOVE_BG_API_KEY"
+      }
+    }
+  ]
+}

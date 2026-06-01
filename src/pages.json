@@ -15,6 +15,13 @@
       }
     },
     {
+      "path": "pages/home/home",
+      "style": {
+        "navigationStyle": "custom",
+        "navigationBarTitleText": "首页"
+      }
+    },
+    {
       "path": "pages/order/order",
       "style": {
         "navigationStyle": "custom",
@@ -25,14 +32,28 @@
       "path": "pages/orders/orders",
       "style": {
         "navigationStyle": "custom",
-        "navigationBarTitleText": "????"
+        "navigationBarTitleText": "订单"
+      }
+    },
+    {
+      "path": "pages/stats/stats",
+      "style": {
+        "navigationStyle": "custom",
+        "navigationBarTitleText": "点单记录"
+      }
+    },
+    {
+      "path": "pages/mine/mine",
+      "style": {
+        "navigationStyle": "custom",
+        "navigationBarTitleText": "我的"
       }
     }
   ],
   "globalStyle": {
     "navigationBarTextStyle": "black",
-    "navigationBarTitleText": "uni-app",
-    "navigationBarBackgroundColor": "#F8F8F8",
-    "backgroundColor": "#F8F8F8"
+    "navigationBarTitleText": "Corn's Menu",
+    "navigationBarBackgroundColor": "#F7F6F1",
+    "backgroundColor": "#F7F6F1"
   }
 }
