@@ -12,6 +12,9 @@ const orders = db.collection('orders')
 const users = db.collection('users')
 const admins = db.collection('admins')
 const legacyAdmin = db.collection('admin')
+const notificationSubscribers = db.collection('notificationSubscribers')
+const DEFAULT_ORDER_NOTIFY_TEMPLATE_ID = 'q1YVZttT-GOLGr8-gwZgBt5IhWlCgOceD-dJ4yXg6ag'
+const DEFAULT_ORDER_DONE_NOTIFY_TEMPLATE_ID = 'RX7VSZzttyoZdsOfLf26PHoxzdAL5CSYtvQb6dnDNSQ'
 
 exports.main = async (event) => {
   const action = event.action
@@ -64,6 +67,10 @@ exports.main = async (event) => {
     if (action === 'clearProducts') {
       await clearProducts(event.adminCode, event.userId || event.account)
       return ok(true)
+    }
+
+    if (action === 'registerOrderNotifier') {
+      return ok(await registerOrderNotifier(openid, event.userId || event.account, event.templateId, event.adminCode))
     }
 
     if (action === 'addProduct') {
@@ -1938,6 +1945,7 @@ async function addOrder(order = {}, openid) {
     totalPrice,
     totalCount,
     note: String(order.note || '').trim(),
+    doneNotifyTemplateId: String(order.doneNotifyTemplateId || '').trim(),
     userId: String(order.userId || order.account || '').trim(),
     status: 'pending',
     remindCount: 0,
@@ -1948,7 +1956,140 @@ async function addOrder(order = {}, openid) {
   }
 
   await orders.add({ data })
+  await notifyOrderCreated(data)
   return data
+}
+
+async function registerOrderNotifier(openid, userId, templateId, adminCode) {
+  if (!(await hasAdminAccess(openid, adminCode))) {
+    throw appError('无权限开启订单通知', 'permission-denied')
+  }
+
+  const openidText = String(openid || '').trim()
+  const templateIdText = String(templateId || '').trim()
+  if (!openidText) {
+    throw appError('微信身份无效', 'invalid-openid')
+  }
+  if (!templateIdText || templateIdText === 'YOUR_ORDER_NOTIFY_TEMPLATE_ID') {
+    throw appError('订单通知模板未配置', 'notify-template-not-configured')
+  }
+
+  await ensureNotificationSubscribersCollection()
+
+  const now = Date.now()
+  const data = {
+    openid: openidText,
+    userId: String(userId || '').trim(),
+    templateId: templateIdText,
+    type: 'order-created',
+    enabled: true,
+    updatedAt: now
+  }
+  const existed = await notificationSubscribers
+    .where({ openid: openidText, type: 'order-created' })
+    .limit(1)
+    .get()
+  const doc = existed.data[0]
+
+  if (doc) {
+    await notificationSubscribers.doc(doc._id).update({ data })
+    return normalizeDocId({ ...doc, ...data })
+  }
+
+  const saved = {
+    ...data,
+    createdAt: now
+  }
+  await notificationSubscribers.add({ data: saved })
+  return saved
+}
+
+async function ensureNotificationSubscribersCollection() {
+  try {
+    await db.createCollection('notificationSubscribers')
+  } catch (error) {
+  }
+}
+
+async function notifyOrderCreated(order) {
+  await ensureNotificationSubscribersCollection()
+
+  const configuredTemplateId = String(process.env.ORDER_NOTIFY_TEMPLATE_ID || DEFAULT_ORDER_NOTIFY_TEMPLATE_ID).trim()
+  let subscribers = []
+  try {
+    const query = configuredTemplateId && configuredTemplateId !== 'YOUR_ORDER_NOTIFY_TEMPLATE_ID'
+      ? notificationSubscribers.where({ type: 'order-created', enabled: true, templateId: configuredTemplateId })
+      : notificationSubscribers.where({ type: 'order-created', enabled: true })
+    const result = await query.limit(20).get()
+    subscribers = result.data || []
+  } catch (error) {
+    console.error('load order notification subscribers failed:', error)
+    return
+  }
+
+  if (!subscribers.length) return
+
+  const data = buildOrderNotificationData(order)
+  await Promise.all(subscribers.map(async subscriber => {
+    const templateId = String(subscriber.templateId || configuredTemplateId || '').trim()
+    if (!templateId || templateId === 'YOUR_ORDER_NOTIFY_TEMPLATE_ID') return
+
+    try {
+      await cloud.openapi.subscribeMessage.send({
+        touser: subscriber.openid,
+        templateId,
+        page: process.env.ORDER_NOTIFY_PAGE || 'pages/orders/orders',
+        data
+      })
+    } catch (error) {
+      console.error('send order notification failed:', subscriber.openid, error && (error.errCode || error.errMsg || error.message || error))
+    }
+  }))
+}
+
+function buildOrderNotificationData(order = {}) {
+  return {
+    character_string3: {
+      value: limitNotifyText(order.id || '新订单', 32)
+    },
+    thing6: {
+      value: limitNotifyText(orderItemsTitle(order), 20)
+    },
+    time7: {
+      value: formatNotifyTime(order.createdAt || Date.now())
+    },
+    thing5: {
+      value: limitNotifyText(order.note || firstItemDesc(order) || '有新订单待处理', 20)
+    }
+  }
+}
+
+function orderItemsTitle(order = {}) {
+  const items = Array.isArray(order.items) ? order.items : []
+  return items
+    .map(item => `${item.name || '商品'}x${Number(item.count || 1)}`)
+    .slice(0, 3)
+    .join('、') || '新订单'
+}
+
+function firstItemDesc(order = {}) {
+  const item = (Array.isArray(order.items) ? order.items : []).find(current => current && (current.desc || current.sugar))
+  return item ? String(item.desc || item.sugar || '').trim() : ''
+}
+
+function formatNotifyTime(timestamp) {
+  const date = new Date(Number(timestamp || Date.now()))
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  const hour = String(date.getHours()).padStart(2, '0')
+  const minute = String(date.getMinutes()).padStart(2, '0')
+  return `${year}-${month}-${day} ${hour}:${minute}`
+}
+
+function limitNotifyText(value, maxLength) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim()
+  return text.length > maxLength ? text.slice(0, maxLength) : text
 }
 
 async function remindOrder(orderId, userId, openid) {
@@ -2091,14 +2232,126 @@ async function updateOrderStatus(orderId, status, openid, adminCode) {
     throw appError('订单不存在或已被删除', 'order-not-found')
   }
 
-  await orders.doc(doc._id).update({
-    data: {
-      status: nextStatus,
-      remindCount: nextStatus === 'done' ? 0 : Number(doc.remindCount || 0),
-      remindedAt: nextStatus === 'done' ? 0 : Number(doc.remindedAt || 0),
-      updatedAt: Date.now()
+  const updateData = {
+    status: nextStatus,
+    remindCount: nextStatus === 'done' ? 0 : Number(doc.remindCount || 0),
+    remindedAt: nextStatus === 'done' ? 0 : Number(doc.remindedAt || 0),
+    updatedAt: Date.now()
+  }
+
+  await orders.doc(doc._id).update({ data: updateData })
+
+  if (nextStatus === 'done' && doc.status !== 'done') {
+    const notifyResult = await notifyOrderDone({
+      ...doc,
+      ...updateData
+    })
+    await orders.doc(doc._id).update({
+      data: {
+        doneNotifyStatus: notifyResult.ok ? 'sent' : 'failed',
+        doneNotifyError: notifyResult.ok ? '' : notifyResult.error,
+        doneNotifyTemplateId: notifyResult.templateId || String(doc.doneNotifyTemplateId || ''),
+        doneNotifiedAt: Date.now()
+      }
+    })
+  }
+}
+
+async function notifyOrderDone(order) {
+  const templateId = String(order.doneNotifyTemplateId || process.env.ORDER_DONE_NOTIFY_TEMPLATE_ID || DEFAULT_ORDER_DONE_NOTIFY_TEMPLATE_ID).trim()
+  if (!templateId || templateId === 'YOUR_ORDER_DONE_NOTIFY_TEMPLATE_ID') {
+    return { ok: false, templateId, error: '订单完成通知模板未配置' }
+  }
+
+  const touser = String(order.createdBy || '').trim()
+  if (!touser) {
+    return { ok: false, templateId, error: '订单缺少用户 openid' }
+  }
+
+  const candidates = buildOrderDoneNotificationCandidates(order)
+  let lastError = ''
+  let lastData = null
+
+  for (const data of candidates) {
+    lastData = data
+    try {
+      await cloud.openapi.subscribeMessage.send({
+        touser,
+        templateId,
+        page: process.env.ORDER_DONE_NOTIFY_PAGE || 'pages/orders/orders',
+        data
+      })
+      return { ok: true, templateId, data }
+    } catch (error) {
+      lastError = String(error && (error.errCode || error.errMsg || error.message || error))
+      console.error('send order done notification failed:', {
+        touser,
+        templateId,
+        orderId: order.id,
+        data,
+        error: lastError
+      })
+      if (!lastError.includes('47003')) break
     }
-  })
+  }
+
+  return { ok: false, templateId, data: lastData, error: lastError || '发送完成通知失败' }
+}
+
+function buildOrderDoneNotificationCandidates(order = {}) {
+  const orderNo = limitNotifyText(order.id || '订单', 32)
+  const createdAt = formatNotifyTime(order.createdAt || Date.now())
+  const doneAt = formatNotifyTime(order.updatedAt || Date.now())
+  const title = limitNotifyText(orderItemsTitle(order), 20)
+
+  return [
+    {
+      character_string1: {
+        value: orderNo
+      },
+      time2: {
+        value: createdAt
+      },
+      time3: {
+        value: doneAt
+      },
+      thing4: {
+        value: title
+      }
+    },
+    {
+      character_string2: {
+        value: orderNo
+      },
+      time4: {
+        value: createdAt
+      },
+      date7: {
+        value: doneAt
+      },
+      thing6: {
+        value: title
+      }
+    },
+    {
+      character_string3: {
+        value: orderNo
+      },
+      time7: {
+        value: createdAt
+      },
+      time8: {
+        value: doneAt
+      },
+      thing6: {
+        value: title
+      }
+    }
+  ]
+}
+
+function buildOrderDoneNotificationData(order = {}) {
+  return buildOrderDoneNotificationCandidates(order)[0]
 }
 
 function normalizeDocId(item) {

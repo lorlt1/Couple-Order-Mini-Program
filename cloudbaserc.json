@@ -14,7 +14,10 @@
         "VISION_API_KEY": "YOUR_VISION_API_KEY",
         "VISION_BASE_URL": "YOUR_VISION_BASE_URL",
         "VISION_MODEL": "gpt-5.4-mini",
-        "REMOVE_BG_API_KEY": "YOUR_REMOVE_BG_API_KEY"
+        "REMOVE_BG_API_KEY": "YOUR_REMOVE_BG_API_KEY",
+        "ORDER_NOTIFY_TEMPLATE_ID": "q1YVZttT-GOLGr8-gwZgBt5IhWlCgOceD-dJ4yXg6ag",
+        "ORDER_DONE_NOTIFY_TEMPLATE_ID": "RX7VSZzttyoZdsOfLf26PHoxzdAL5CSYtvQb6dnDNSQ",
+        "ORDER_NOTIFY_PAGE": "pages/orders/orders"
       }
     }
   ]

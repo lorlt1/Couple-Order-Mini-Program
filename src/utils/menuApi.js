@@ -73,6 +73,7 @@ export function getErrorMessage(error, fallback = '操作失败') {
     'invalid-product-id': '商品 ID 无效',
     'invalid-order-id': '订单 ID 无效',
     'invalid-session': '登录状态已失效，请重新登录',
+    'notify-template-not-configured': '请先配置订单通知模板 ID',
     'order-finished': '订单已完成，不能取消',
     'network request failed': '网络异常，请稍后重试'
   }
@@ -98,6 +99,21 @@ export async function clearCloudProducts(userId = '') {
   return callCloud('clearProducts', {
     adminCode: 'admin',
     userId: userId || currentUserId()
+  })
+}
+
+export async function registerOrderNotifier(templateId) {
+  const id = String(templateId || '').trim()
+  if (!id || id === 'YOUR_ORDER_NOTIFY_TEMPLATE_ID') {
+    const error = new Error('请先配置订单通知模板 ID')
+    error.code = 'notify-template-not-configured'
+    throw error
+  }
+
+  return callCloud('registerOrderNotifier', {
+    templateId: id,
+    userId: ensureUserId(),
+    adminCode: isAdmin() ? 'admin' : ''
   })
 }
 

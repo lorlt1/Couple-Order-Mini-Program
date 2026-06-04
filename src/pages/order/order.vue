@@ -88,7 +88,9 @@
           <text class="total-label">查看已选商品</text>
         </view>
       </view>
-      <view class="checkout-btn" @click="handleCheckout">下单</view>
+      <view class="checkout-btn" :class="{ disabled: isCheckingOut }" @click="handleCheckout">
+        {{ isCheckingOut ? '提交中' : '下单' }}
+      </view>
     </view>
 
     <view class="empty-cart" v-if="canOrder && !isManager && !cart.length">
@@ -241,7 +243,7 @@
           <text class="detail-name">{{ detailItem.name }}</text>
           <text class="detail-brand" v-if="detailItem.brand && detailItem.brand !== '自定义'">{{ detailItem.brand }}</text>
           <text class="detail-desc">{{ detailItem.desc }}</text>
-          <view class="detail-options" v-if="detailNeedsOptions">
+          <view class="detail-options" v-if="!isManager && detailNeedsOptions">
             <view class="detail-option-group">
               <text class="detail-option-title">甜度</text>
               <view class="detail-option-row">
@@ -291,7 +293,7 @@
           <view class="detail-actions">
             <view class="detail-delete-btn" @tap="deleteDetailProduct">删除</view>
             <view class="detail-edit-btn" @tap="editDetailProduct">编辑</view>
-            <view class="detail-cart-btn" v-if="canOrder" @tap="addDetailToCart">加入购物车</view>
+            <view class="detail-cart-btn" v-if="!isManager" @tap="addDetailToCart">加入购物车</view>
           </view>
         </view>
       </view>
@@ -305,6 +307,7 @@
 import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import BottomNav from '../../components/BottomNav.vue'
+import { ORDER_DONE_NOTIFY_TEMPLATE_ID } from '../../config/cloud'
 import {
   addOrder,
   addProduct,
@@ -337,6 +340,7 @@ const detailSize = ref('')
 const detailTopping = ref('无小料')
 const detailCustomTopping = ref('')
 const orderNote = ref('')
+const isCheckingOut = ref(false)
 
 const addName = ref('')
 const addPrice = ref('')
@@ -354,7 +358,7 @@ const recognitionText = ref('')
 const recognitionTaskId = ref(0)
 const isManager = ref(false)
 const activeAccount = ref('')
-const canOrder = computed(() => true)
+const canOrder = computed(() => !isManager.value)
 
 const searchKeyword = computed(() => cleanRecognizedText(search.value, 20).toLowerCase())
 
@@ -370,6 +374,11 @@ onShow(() => {
   }
   activeAccount.value = accountKey
   isManager.value = isAdmin()
+  if (!canOrder.value) {
+    cart.value = []
+    orderNote.value = ''
+    showCartDetail.value = false
+  }
   loadProducts()
 })
 
@@ -557,6 +566,10 @@ function selectSugar() {
 }
 
 async function addToCart(item) {
+  if (!canOrder.value) {
+    uni.showToast({ title: '管理员不需要下单', icon: 'none' })
+    return
+  }
   const normalized = normalizeCartItem(item && typeof item === 'object' ? { ...item, count: 1 } : null)
   if (!normalized) {
     uni.showToast({ title: '这个商品信息不完整，请重新添加', icon: 'none' })
@@ -600,8 +613,14 @@ function clearCart() {
 }
 
 async function handleCheckout() {
+  if (!canOrder.value) {
+    uni.showToast({ title: '管理员不需要下单', icon: 'none' })
+    return
+  }
+  if (isCheckingOut.value) return
   pruneCartItems()
   if (!cart.value.length) return
+  isCheckingOut.value = true
 
   const order = {
     id: `order-${Date.now()}`,
@@ -625,11 +644,16 @@ async function handleCheckout() {
     totalPrice: 0,
     totalCount: cartCount.value,
     note: cleanOrderNote(orderNote.value),
+    doneNotifyTemplateId: ORDER_DONE_NOTIFY_TEMPLATE_ID,
     status: 'pending',
     createdAt: Date.now()
   }
 
   try {
+    const acceptedDoneNotify = await requestOrderDoneSubscribe()
+    if (!acceptedDoneNotify) {
+      uni.showToast({ title: '未开启完成通知，订单仍会提交', icon: 'none' })
+    }
     await addOrder(order)
     cart.value = []
     orderNote.value = ''
@@ -637,6 +661,33 @@ async function handleCheckout() {
     uni.showToast({ title: '下单成功', icon: 'success' })
   } catch (error) {
     uni.showToast({ title: getErrorMessage(error, '下单失败，请稍后重试'), icon: 'none' })
+  } finally {
+    isCheckingOut.value = false
+  }
+}
+
+async function requestOrderDoneSubscribe() {
+  if (
+    !ORDER_DONE_NOTIFY_TEMPLATE_ID ||
+    ORDER_DONE_NOTIFY_TEMPLATE_ID === 'YOUR_ORDER_DONE_NOTIFY_TEMPLATE_ID' ||
+    typeof wx === 'undefined' ||
+    !wx.requestSubscribeMessage
+  ) {
+    return
+  }
+
+  try {
+    const requestSubscribeMessage = uni.requestSubscribeMessage || wx.requestSubscribeMessage
+    return await withTimeout(new Promise((resolve, reject) => {
+      requestSubscribeMessage({
+        tmplIds: [ORDER_DONE_NOTIFY_TEMPLATE_ID],
+        success: (res) => resolve(res[ORDER_DONE_NOTIFY_TEMPLATE_ID] === 'accept'),
+        fail: reject
+      })
+    }), 8000, '订单完成通知授权超时')
+  } catch (error) {
+    console.error('request order done subscribe failed:', error)
+    return false
   }
 }
 
@@ -1148,6 +1199,7 @@ function showDetail(item) {
 }
 
 async function addDetailToCart() {
+  if (!canOrder.value) return
   if (!detailItem.value) return
   const topping = detailTopping.value === '自定义'
     ? cleanRecognizedText(detailCustomTopping.value, 12)
@@ -1736,6 +1788,10 @@ page {
   justify-content: center;
   font-size: 28rpx;
   font-weight: 900;
+}
+
+.checkout-btn.disabled {
+  opacity: 0.68;
 }
 
 .empty-cart {

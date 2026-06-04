@@ -82,6 +82,11 @@
           <text class="note-text">{{ order.note }}</text>
         </view>
 
+        <view class="order-debug" v-if="isManager && order.doneNotifyError">
+          <text class="debug-label">完成通知失败</text>
+          <text class="debug-text">{{ notifyErrorText(order.doneNotifyError) }}</text>
+        </view>
+
         <view class="order-actions" v-if="isManager">
           <view class="action-btn primary" v-if="isActive(order)" @click="finishOrder(order.id)">确认完成</view>
           <view class="action-btn danger" @click="deleteOrderRecord(order)">删除记录</view>
@@ -105,7 +110,8 @@
 import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import BottomNav from '../../components/BottomNav.vue'
-import { cancelOrder, deleteOrder, getErrorMessage, listOrders, remindOrder, updateOrderStatus } from '../../utils/menuApi'
+import { ORDER_NOTIFY_TEMPLATE_ID } from '../../config/cloud'
+import { cancelOrder, deleteOrder, getErrorMessage, listOrders, registerOrderNotifier, remindOrder, updateOrderStatus } from '../../utils/menuApi'
 import { getSession, isAdmin } from '../../utils/auth'
 
 const orders = ref([])
@@ -151,6 +157,69 @@ async function loadOrders() {
   }
 }
 
+async function enableOrderNotify(options = {}) {
+  const silent = Boolean(options.silent)
+  if (!ORDER_NOTIFY_TEMPLATE_ID || ORDER_NOTIFY_TEMPLATE_ID === 'YOUR_ORDER_NOTIFY_TEMPLATE_ID') {
+    if (!silent) uni.showToast({ title: '请先配置订单通知模板 ID', icon: 'none' })
+    return false
+  }
+  if (typeof wx === 'undefined' || !wx.requestSubscribeMessage) {
+    if (!silent) uni.showToast({ title: '当前环境不支持订阅消息', icon: 'none' })
+    return false
+  }
+
+  try {
+    const accepted = await requestOrderNotifySubscribe()
+    if (!accepted) {
+      if (!silent) uni.showToast({ title: '你还没有允许订单通知', icon: 'none' })
+      return false
+    }
+    try {
+      await registerOrderNotifier(ORDER_NOTIFY_TEMPLATE_ID)
+    } catch (error) {
+      console.error('register order notifier failed:', error)
+      if (!silent) uni.showToast({ title: getErrorMessage(error, '通知保存失败'), icon: 'none' })
+      return false
+    }
+    if (!silent) uni.showToast({ title: '订单通知已开启', icon: 'none' })
+    return true
+  } catch (error) {
+    console.error('request subscribe message failed:', error)
+    if (!silent) uni.showToast({ title: getSubscribeErrorMessage(error), icon: 'none' })
+    return false
+  }
+}
+
+function requestOrderNotifySubscribe() {
+  return withTimeout(new Promise((resolve, reject) => {
+    const requestSubscribeMessage = uni.requestSubscribeMessage || wx.requestSubscribeMessage
+    requestSubscribeMessage({
+      tmplIds: [ORDER_NOTIFY_TEMPLATE_ID],
+      success: (res) => resolve(res[ORDER_NOTIFY_TEMPLATE_ID] === 'accept'),
+      fail: reject
+    })
+  }), 8000)
+}
+
+function withTimeout(promise, timeoutMs) {
+  return Promise.race([
+    promise,
+    new Promise(resolve => {
+      setTimeout(() => resolve(false), timeoutMs)
+    })
+  ])
+}
+
+function getSubscribeErrorMessage(error) {
+  const message = String(error?.errMsg || error?.message || '')
+  if (message.includes('cancel')) return '你取消了通知授权'
+  if (message.includes('main switch')) return '请在微信设置里开启订阅消息'
+  if (message.includes('tmplIds')) return '通知模板 ID 无效'
+  if (message.includes('No template data')) return '模板未同步，请确认小程序 AppID 和模板 ID'
+  if (message.includes('can only be invoked by user TAP gesture')) return '请点击按钮开启通知'
+  return message || '订阅授权失败'
+}
+
 function isActive(order) {
   return order.status !== 'done' && order.status !== 'cancelled'
 }
@@ -167,7 +236,9 @@ async function finishOrder(orderId) {
   ))
 
   try {
+    await enableOrderNotify({ silent: true })
     await updateOrderStatus(orderId, 'done')
+    await loadOrders()
     uni.showToast({ title: '订单已完成', icon: 'none' })
   } catch (error) {
     orders.value = previous
@@ -265,6 +336,13 @@ function orderItemCount(order) {
 
 function itemNote(item = {}) {
   return String(item.note || item.remark || item.desc || '').trim()
+}
+
+function notifyErrorText(error) {
+  const text = String(error || '')
+  if (text.includes('47003')) return '模板字段不匹配，已自动尝试备用字段。请用新订单再测一次。'
+  if (text.includes('43101')) return '用户没有授权或授权次数已用完。'
+  return text
 }
 
 function fallbackText(item) {
@@ -384,7 +462,7 @@ page {
 }
 
 .orders-list {
-  height: calc(100vh - 390rpx);
+  height: calc(100vh - 332rpx);
   padding-bottom: calc(180rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;
 }
@@ -610,6 +688,31 @@ page {
   padding: 18rpx 20rpx;
   border-radius: 20rpx;
   background: rgba(255, 244, 203, 0.48);
+}
+
+.order-debug {
+  margin-top: 18rpx;
+  padding: 16rpx 18rpx;
+  border-radius: 18rpx;
+  background: rgba(217, 87, 69, 0.08);
+}
+
+.debug-label,
+.debug-text {
+  display: block;
+  font-size: 22rpx;
+  line-height: 1.5;
+}
+
+.debug-label {
+  color: #d95745;
+  font-weight: 900;
+}
+
+.debug-text {
+  margin-top: 6rpx;
+  color: #6E6E73;
+  word-break: break-all;
 }
 
 .note-label,
